@@ -90,7 +90,7 @@ function applyHeadCorrectionOnce() {
   headBone.updateMatrixWorld(true);
 }
 
-statusLine.textContent = 'build 20261113-11';
+statusLine.textContent = 'build 20261113-12';
 
 // --- 記憶（静的連携） ---
 let memory = { posts: [], episodes: [] };
@@ -163,6 +163,7 @@ let xrSession = null;
 let hitTestSource = null;
 let xrPlaced = false;
 let xrHitSeen = false; // ヒットテストが一度でも床を捉えたか（診断用）
+let lastHitAt = -Infinity; // 最後に床を捉えた時刻（レティクルの保持用）
 let floorY = 0; // 現在の床の高さ（通常モードは 0、XR ではヒットテストで決まる）
 let lastStageTapAt = -Infinity;
 
@@ -210,6 +211,7 @@ async function startXR() {
     session.addEventListener('select', onXRSelect);
     session.addEventListener('end', onXRSessionEnd);
     xrActive = true;
+    anchor.visible = false; // 配置するまでは姿を見せない（原点＝目の高さに浮いて見えるため）
     document.body.classList.add('xr-on');
     setTimeout(() => {
       if (xrActive && !xrHitSeen) {
@@ -232,6 +234,7 @@ function onXRSelect(ev) {
   if (!xrPlaced) {
     // 配置前：レティクルの位置（実床のヒット点）に立たせる
     if (!reticle.visible) return;
+    anchor.visible = true;
     anchor.position.copy(reticle.position);
     floorY = reticle.position.y;
     ground.position.y = floorY;
@@ -263,6 +266,7 @@ function onXRSessionEnd() {
   xrActive = false;
   xrPlaced = false;
   xrHitSeen = false;
+  anchor.visible = true;
   xrSession = null;
   if (hitTestSource) {
     hitTestSource.cancel();
@@ -311,22 +315,26 @@ function loop(now, frame) {
   const dt = Math.min((now - lastLoopAt) / 1000, 0.05);
   lastLoopAt = now;
 
-  // XR 配置前：ヒットテストで実床の位置にレティクルを出す
+  // XR 配置前：ヒットテストで実床の位置にレティクルを出す。
+  // 床を見失っても 0.6 秒は残す（チラつき防止と、タップの狙いを付けやすくするため）。
   if (xrActive && !xrPlaced && hitTestSource && frame) {
     const refSpace = renderer.xr.getReferenceSpace();
     const hits = frame.getHitTestResults(hitTestSource);
-    if (hits.length) xrHitSeen = true;
-    if (hits.length && refSpace) {
-      const pose = hits[0].getPose(refSpace);
-      if (pose) {
-        reticle.position.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
-        reticle.quaternion.set(
-          pose.transform.orientation.x, pose.transform.orientation.y,
-          pose.transform.orientation.z, pose.transform.orientation.w
-        );
-        reticle.visible = true;
+    if (hits.length) {
+      xrHitSeen = true;
+      lastHitAt = now;
+      if (refSpace) {
+        const pose = hits[0].getPose(refSpace);
+        if (pose) {
+          reticle.position.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
+          reticle.quaternion.set(
+            pose.transform.orientation.x, pose.transform.orientation.y,
+            pose.transform.orientation.z, pose.transform.orientation.w
+          );
+          reticle.visible = true;
+        }
       }
-    } else {
+    } else if (now - lastHitAt > 600) {
       reticle.visible = false;
     }
   }
