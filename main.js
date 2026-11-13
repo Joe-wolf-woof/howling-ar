@@ -119,6 +119,7 @@ const raycaster = new THREE.Raycaster();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const placeTarget = new THREE.Vector3();
 let hasPlaceTarget = false;
+let journeyMode = 'walk'; // タップ時点の総距離で決める移動モード（途中では切り替えない）
 let photoMode = false;
 
 const marker = new THREE.Mesh(
@@ -148,6 +149,10 @@ container.addEventListener('pointerdown', (ev) => {
   hit.z = THREE.MathUtils.clamp(hit.z, -1.2, 1.8);
   placeTarget.copy(hit);
   hasPlaceTarget = true;
+  // 残り距離ではなく「旅の総距離」で trot/walk を決める。
+  // 残り距離判定だと閾値を超えるタップが少なく、超えても接近と同時に walk へ落ちてしまう。
+  const journey = Math.hypot(hit.x - anchor.position.x, hit.z - anchor.position.z);
+  journeyMode = journey > 0.85 ? 'trot' : 'walk';
   marker.position.set(hit.x, 0.01, hit.z);
   markerShownAt = performance.now();
 });
@@ -171,8 +176,8 @@ function loop(now) {
     const dz = placeTarget.z - anchor.position.z;
     const dist = Math.hypot(dx, dz);
     if (dist > 0.03) {
-      mode = dist > 1.4 ? 'trot' : 'walk';
-      const speed = mode === 'trot' ? 4.0 : 2.2;
+      mode = dist < 0.3 ? 'walk' : journeyMode; // 到着間際だけ walk に落として自然に減速
+      const speed = mode === 'trot' ? 3.6 : 2.0;
       const step = Math.min(dist, speed * dt);
       anchor.position.x += (dx / dist) * step;
       anchor.position.z += (dz / dist) * step;
