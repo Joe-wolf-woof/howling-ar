@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { createScene, tryLoadAvatarModel } from './ar-viewer/scene.js';
 import { createPlaceholderAvatar, createGlbAvatar } from './ar-viewer/avatar.js';
 import { CameraManager } from './ar-viewer/camera.js';
-import { generateReply, getApiKey, setApiKey } from './ai-agent-engine/gemini-client.js';
+import { generateReply, getApiKey, setApiKey } from './ai-agent-engine/gemini-client.js?v=20261113-4';
 import { speak } from './ai-agent-engine/speech.js';
 import { MotionController } from './motion-controller/motion-controller.js';
 import { loadMemory, buildGreeting, memoryContext } from './memory/greeting.js';
@@ -263,6 +263,7 @@ async function talk() {
   talkBusy = true;
   talkButton.disabled = true;
   showBubble('……');
+  motion.play('thinking'); // 待っている間も「考えている」ことが見えるように
   try {
     const reply = await generateReply(text, memCtx);
     say(reply.text, reply.emotion);

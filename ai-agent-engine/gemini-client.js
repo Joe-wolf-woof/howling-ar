@@ -64,10 +64,14 @@ return [saved,...MODEL_CANDIDATES.filter((m) => m!== saved)];
 return MODEL_CANDIDATES;
 }
 
-async function callModel(model, key, parts) {
+async function callModel(model, key, parts, { thinking = true } = {}) {
+// 応答は1〜2文のJSONのみ。thinking を切って出力上限を絞ることで、
+// 思考トークンに時間を食われる問題（実測: 956トークン消費）を断つ。
+const generationConfig = { responseMimeType: 'application/json', maxOutputTokens: 300 };
+if (thinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
 const body = {
 contents: [{ role: 'user', parts}],
-generationConfig: { responseMimeType: 'application/json'},
+generationConfig,
 };
 const res = await fetch(`${API_BASE}/${model}:generateContent?key=${encodeURIComponent(key)}`, {
 method: 'POST',
@@ -82,6 +86,7 @@ detail = errJson?.error?.message || '';
 } catch { /* 詳細が取れない場合はステータスのみ */}
 const err = new Error(`Gemini API error: ${res.status}${detail? ` — ${detail}`: ''}`);
 err.status = res.status;
+err.detail = detail;
 throw err;
 }
 const data = await res.json();
@@ -100,6 +105,19 @@ localStorage.setItem(MODEL_STORAGE_KEY, model);
 return reply;
 } catch (err) {
 lastError = err;
+// thinkingConfig を受け付けないモデル（400で thinking に言及）では、
+// thinking なしで同じモデルを1回だけ再試行する。
+if (err.status === 400 && /thinking/i.test(err.detail || '')) {
+try {
+const reply = await callModel(model, key, parts, { thinking: false });
+localStorage.setItem(MODEL_STORAGE_KEY, model);
+return reply;
+} catch (retryErr) {
+lastError = retryErr;
+if (![404, 429, 503].includes(retryErr.status)) throw retryErr;
+continue;
+}
+}
 // 404（モデル不可）・429（レート制限）・503（高負荷）は別モデルで再試行する。
 // それ以外（400やキー不正など）は即座に投げる。
 if (![404, 429, 503].includes(err.status)) throw err;
