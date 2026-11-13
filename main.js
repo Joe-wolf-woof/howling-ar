@@ -13,7 +13,7 @@
  * 12月に Tripo Pro 生成モデルへ差し替える前提で、差し替えは avatar.glb の置換のみで済む。
  */
 import * as THREE from 'three';
-import { createScene, tryLoadAvatarModel } from './ar-viewer/scene.js';
+import { createScene, tryLoadAvatarModel } from './ar-viewer/scene.js?v=20261113-6';
 import { createPlaceholderAvatar, createGlbAvatar } from './ar-viewer/avatar.js';
 import { CameraManager } from './ar-viewer/camera.js';
 import { generateReply, getApiKey, setApiKey } from './ai-agent-engine/gemini-client.js?v=20261113-4';
@@ -46,7 +46,7 @@ const photoImg = document.getElementById('photo-img');
 const photoDownload = document.getElementById('photo-download');
 const photoClose = document.getElementById('photo-close');
 
-const { renderer, scene, camera } = createScene(container);
+const { renderer, scene, camera, ground } = createScene(container);
 
 // 配置用アンカー：タップ配置で動かすのは外側のこのグループ。
 // 感情モーションは内側のアバター本体に掛かるため競合しない（第一作の構成を踏襲）。
@@ -144,8 +144,131 @@ marker.rotation.x = -Math.PI / 2;
 scene.add(marker);
 let markerShownAt = -Infinity;
 
+/** 移動目標をセットする（通常モードのタップと XR の select で共用） */
+function setPlaceTarget(hit, { clamp = true } = {}) {
+  const p = hit.clone();
+  if (clamp) {
+    p.x = THREE.MathUtils.clamp(p.x, -2.0, 2.0);
+    p.z = THREE.MathUtils.clamp(p.z, -1.2, 1.8);
+  }
+  placeTarget.copy(p);
+  hasPlaceTarget = true;
+  // 残り距離ではなく「旅の総距離」で trot/walk を決める。
+  // 残り距離判定だと閾値を超えるタップが少なく、超えても接近と同時に walk へ落ちてしまう。
+  const journey = Math.hypot(p.x - anchor.position.x, p.z - anchor.position.z);
+  journeyMode = journey > 0.85 ? 'trot' : 'walk';
+  marker.position.set(p.x, floorY + 0.01, p.z);
+  markerShownAt = performance.now();
+}
+
+// --- WebXR：実際の床に合わせる（対応端末のみ。通常モードはそのまま残す） ---
+let xrSupported = false;
+let xrActive = false;
+let xrSession = null;
+let hitTestSource = null;
+let xrPlaced = false;
+let floorY = 0; // 現在の床の高さ（通常モードは 0、XR ではヒットテストで決まる）
+let lastStageTapAt = -Infinity;
+
+const reticleGeo = new THREE.RingGeometry(0.14, 0.2, 40);
+reticleGeo.rotateX(-Math.PI / 2); // 姿勢クォータニオンで面に沿わせるため、法線を +Y にしておく
+const reticle = new THREE.Mesh(
+  reticleGeo,
+  new THREE.MeshBasicMaterial({ color: 0x7ee2a8, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false })
+);
+reticle.visible = false;
+scene.add(reticle);
+
+if (navigator.xr?.isSessionSupported) {
+  navigator.xr.isSessionSupported('immersive-ar').then((ok) => {
+    xrSupported = !!ok;
+    if (xrSupported) {
+      startButton.textContent = 'ARで会いに行く';
+      document.querySelector('.start-note').innerHTML =
+        'ARを使うと、実際の床の上にハウルが現れます。<br />床を映して、緑の輪が出た場所をタップしてください。';
+    }
+  }).catch(() => {});
+}
+
+async function startXR() {
+  try {
+    const session = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hit-test'],
+      optionalFeatures: ['dom-overlay'],
+      domOverlay: { root: document.body },
+    });
+    xrSession = session;
+    renderer.xr.setReferenceSpaceType('local');
+    await renderer.xr.setSession(session);
+    const viewerSpace = await session.requestReferenceSpace('viewer');
+    hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+    session.addEventListener('select', onXRSelect);
+    session.addEventListener('end', onXRSessionEnd);
+    xrActive = true;
+    document.body.classList.add('xr-on');
+    return true;
+  } catch {
+    xrSession = null;
+    hitTestSource = null;
+    return false;
+  }
+}
+
+function onXRSelect(ev) {
+  if (!xrActive) return;
+  const refSpace = renderer.xr.getReferenceSpace();
+  if (!ev.frame || !refSpace) return;
+  if (!xrPlaced) {
+    // 配置前：レティクルの位置（実床のヒット点）に立たせる
+    if (!reticle.visible) return;
+    anchor.position.copy(reticle.position);
+    floorY = reticle.position.y;
+    ground.position.y = floorY;
+    anchor.scale.setScalar(0.85); // 実寸寄り（体長 約1.3m）
+    xrPlaced = true;
+    reticle.visible = false;
+    showNote('ハウルが床に立った。床をタップすると、そこへ移動する。');
+    return;
+  }
+  // 配置後：タップのレイと床面の交点へ移動する。
+  // UIボタンへのタップでも select は発火するため、ステージ自体へのタップと時刻で照合する。
+  if (performance.now() - lastStageTapAt > 600) return;
+  const pose = ev.frame.getPose(ev.inputSource.targetRaySpace, refSpace);
+  if (!pose) return;
+  const m = new THREE.Matrix4().fromArray(pose.transform.matrix);
+  const origin = new THREE.Vector3().setFromMatrixPosition(m);
+  const dir = new THREE.Vector3(0, 0, -1).transformDirection(m);
+  if (Math.abs(dir.y) < 0.05) return;
+  const t = (floorY - origin.y) / dir.y;
+  if (t < 0.2 || t > 7) return;
+  const target = origin.add(dir.multiplyScalar(t));
+  target.y = floorY;
+  setPlaceTarget(target, { clamp: false });
+}
+
+function onXRSessionEnd() {
+  xrActive = false;
+  xrPlaced = false;
+  xrSession = null;
+  if (hitTestSource) {
+    hitTestSource.cancel();
+    hitTestSource = null;
+  }
+  reticle.visible = false;
+  floorY = 0;
+  ground.position.y = 0;
+  anchor.position.set(0, 0, 0);
+  anchor.rotation.y = 0;
+  anchor.scale.setScalar(1);
+  hasPlaceTarget = false;
+  document.body.classList.remove('xr-on');
+  showNote('ARを終了した。通常モードに戻った。');
+}
+
 container.addEventListener('pointerdown', (ev) => {
   if (!started || photoMode) return;
+  lastStageTapAt = performance.now();
+  if (xrActive) return; // XR中は select イベント側で処理する
   const rect = container.getBoundingClientRect();
   const ndc = new THREE.Vector2(
     ((ev.clientX - rect.left) / rect.width) * 2 - 1,
@@ -156,17 +279,10 @@ container.addEventListener('pointerdown', (ev) => {
   if (!raycaster.ray.intersectPlane(groundPlane, hit)) {
     hit.set(ndc.x * 2.4, 0, -1.2);
   }
-  hit.x = THREE.MathUtils.clamp(hit.x, -2.0, 2.0);
-  hit.z = THREE.MathUtils.clamp(hit.z, -1.2, 1.8);
-  placeTarget.copy(hit);
-  hasPlaceTarget = true;
-  // 残り距離ではなく「旅の総距離」で trot/walk を決める。
-  // 残り距離判定だと閾値を超えるタップが少なく、超えても接近と同時に walk へ落ちてしまう。
-  const journey = Math.hypot(hit.x - anchor.position.x, hit.z - anchor.position.z);
-  journeyMode = journey > 0.85 ? 'trot' : 'walk';
-  marker.position.set(hit.x, 0.01, hit.z);
-  markerShownAt = performance.now();
+  setPlaceTarget(hit);
 });
+
+const _camPos = new THREE.Vector3();
 
 /** 角度の最短差分で滑らかに近づける */
 function dampAngle(current, target, lambda, dt) {
@@ -177,9 +293,28 @@ function dampAngle(current, target, lambda, dt) {
 }
 
 let lastLoopAt = performance.now();
-function loop(now) {
+function loop(now, frame) {
   const dt = Math.min((now - lastLoopAt) / 1000, 0.05);
   lastLoopAt = now;
+
+  // XR 配置前：ヒットテストで実床の位置にレティクルを出す
+  if (xrActive && !xrPlaced && hitTestSource && frame) {
+    const refSpace = renderer.xr.getReferenceSpace();
+    const hits = frame.getHitTestResults(hitTestSource);
+    if (hits.length && refSpace) {
+      const pose = hits[0].getPose(refSpace);
+      if (pose) {
+        reticle.position.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
+        reticle.quaternion.set(
+          pose.transform.orientation.x, pose.transform.orientation.y,
+          pose.transform.orientation.z, pose.transform.orientation.w
+        );
+        reticle.visible = true;
+      }
+    } else {
+      reticle.visible = false;
+    }
+  }
 
   let mode = 'idle';
   if (hasPlaceTarget && !photoMode) {
@@ -194,7 +329,10 @@ function loop(now) {
       anchor.position.z += (dz / dist) * step;
       anchor.rotation.y = dampAngle(anchor.rotation.y, Math.atan2(dx, dz), 12, dt);
     } else {
-      anchor.rotation.y = dampAngle(anchor.rotation.y, 0, 6, dt); // 着いたら正面へ
+      // 着いたらカメラ（XR中はユーザー本人）の方を向く
+      camera.getWorldPosition(_camPos);
+      const faceYaw = Math.atan2(_camPos.x - anchor.position.x, _camPos.z - anchor.position.z);
+      anchor.rotation.y = dampAngle(anchor.rotation.y, faceYaw, 6, dt);
     }
   } else if (photoMode) {
     // 撮影中はカメラ（正面）を向く
@@ -214,9 +352,8 @@ function loop(now) {
   motion.update(now);
   applyHeadCorrection();
   renderer.render(scene, camera);
-  requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
+renderer.setAnimationLoop(loop); // XR 提示中も回り続けるよう、rAF ではなくこちらを使う
 
 // --- カメラ ---
 const cameraManager = new CameraManager(cameraVideo);
@@ -240,6 +377,10 @@ function stopCamera() {
 }
 
 cameraButton.addEventListener('click', async () => {
+  if (xrActive) {
+    showNote('AR中は本物の景色が見えている。そのままで大丈夫だ。');
+    return;
+  }
   if (cameraManager.isRunning) {
     stopCamera();
     showNote('カメラを止めた。ワガハイはここにいる。');
@@ -248,21 +389,30 @@ cameraButton.addEventListener('click', async () => {
   }
 });
 
-// --- 登場：スタート画面 → カメラ → 記憶を踏まえた挨拶 ---
+// --- 登場：スタート画面 → （AR or カメラ） → 記憶を踏まえた挨拶 ---
 let started = false;
+async function ensureMemory() {
+  // 記憶の読み込みが終わっていない場合は少し待つ（挨拶に使うため）
+  if (!memCtx && memory.posts.length === 0 && memory.episodes.length === 0) {
+    await loadMemory().then((m) => { memory = m; memCtx = memoryContext(m); });
+  }
+}
 startButton.addEventListener('click', async () => {
   if (started) return;
   started = true;
   startOverlay.classList.add('fading');
   setTimeout(() => startOverlay.classList.add('hidden'), 700);
 
+  if (xrSupported && (await startXR())) {
+    showNote('床にスマホを向けて、緑の輪が出た場所をタップして。');
+    await ensureMemory();
+    say(buildGreeting(memory), 'happy');
+    return;
+  }
+
   const cameraOk = await startCamera();
   if (!cameraOk) showNote('カメラなしでも会える。部屋の様子は見えていないがな。');
-
-  // 記憶の読み込みが終わっていない場合は少し待つ（挨拶に使うため）
-  if (!memCtx && memory.posts.length === 0 && memory.episodes.length === 0) {
-    await loadMemory().then((m) => { memory = m; memCtx = memoryContext(m); });
-  }
+  await ensureMemory();
   say(buildGreeting(memory), 'happy');
 });
 
@@ -314,7 +464,13 @@ function exitPhotoMode() {
   document.body.classList.remove('photo-mode');
   photoUi.classList.add('hidden');
 }
-photoButton.addEventListener('click', enterPhotoMode);
+photoButton.addEventListener('click', () => {
+  if (xrActive) {
+    showNote('写真は通常モードで撮ってくれ。');
+    return;
+  }
+  enterPhotoMode();
+});
 photoExit.addEventListener('click', exitPhotoMode);
 
 function capturePhoto() {

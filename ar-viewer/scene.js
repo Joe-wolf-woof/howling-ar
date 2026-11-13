@@ -14,6 +14,7 @@ export function createScene(container) {
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.xr.enabled = true; // WebXR（実際の床への配置）用。通常表示では無害
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -51,7 +52,7 @@ export function createScene(container) {
     renderer.setSize(container.clientWidth, container.clientHeight);
   });
 
-  return { renderer, scene, camera };
+  return { renderer, scene, camera, ground };
 }
 
 /**
