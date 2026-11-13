@@ -74,16 +74,27 @@ tryLoadAvatarModel().then((gltf) => {
 // 12月にモデルを差し替えたら、この補正は外すこと。
 const HEAD_YAW_CORRECTION = THREE.MathUtils.degToRad(32);
 let headBone = null;
+let prevAppliedHead = null; // 前フレームに自分が設定したローカル回転（累積防止の判定用）
 const _hq = new THREE.Quaternion();
 const _pq = new THREE.Quaternion();
 const _cq = new THREE.Quaternion();
 const _upAxis = new THREE.Vector3(0, 1, 0);
-function applyHeadCorrection() {
-  if (!headBone || !headBone.parent) return;
+function composeHeadYaw(angle) {
   headBone.getWorldQuaternion(_hq);
-  _cq.setFromAxisAngle(_upAxis, HEAD_YAW_CORRECTION).multiply(_hq);
+  _cq.setFromAxisAngle(_upAxis, angle).multiply(_hq);
   headBone.parent.getWorldQuaternion(_pq);
   headBone.quaternion.copy(_pq.invert().multiply(_cq));
+}
+function applyHeadCorrection() {
+  if (!headBone || !headBone.parent) return;
+  // 静止中はアニメーションがボーンを書き換えないため、補正が毎フレーム累積してしまう。
+  // 前フレームに自分が設定した値のままなら、まず前回の補正を取り消してから掛け直す。
+  if (prevAppliedHead && Math.abs(headBone.quaternion.dot(prevAppliedHead)) > 0.9999) {
+    composeHeadYaw(-HEAD_YAW_CORRECTION);
+  }
+  composeHeadYaw(HEAD_YAW_CORRECTION);
+  if (!prevAppliedHead) prevAppliedHead = new THREE.Quaternion();
+  prevAppliedHead.copy(headBone.quaternion);
 }
 
 // --- 記憶（静的連携） ---
