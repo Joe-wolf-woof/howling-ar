@@ -1,7 +1,7 @@
 # ハウリング（Howling）
 
 部屋にオオカミが住んでいる——AIキャラクター「ハウル」に会いに行く WebAR アプリ。
-第二作。第一作『Spatial AI NPC』（仮説検証の実験作）は凍結し、本作はユーザー目線の「作品」として作る。
+第二作。第一作『Spatial AI NPC』（仮説検証の実験作）と違って、本作はユーザー目線の「作品」として作る。
 コンセプト設計: `~/workspace/goals/xr-ai/files/new-ar-app-concept.md`
 
 ハウルは X（@AgentName_Howl）で発信しているのと同じ個体で、自分の投稿と過去の出来事を覚えている。
