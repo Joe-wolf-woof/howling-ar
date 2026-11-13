@@ -29,6 +29,10 @@ body.camera-on #camera-video { display: block; }
   background: radial-gradient(circle at 50% 30%, #2a3348, #141926);
 }
 body.camera-on #canvas-container { background: transparent; }
+/* WebXR 中は DOM が AR 映像の上に重なるため、背景を透明にして実景を透かす */
+body.xr-on { background: transparent; }
+body.xr-on #canvas-container { background: transparent; }
+body.xr-on #camera-video { display: none; }
 #canvas-container canvas { display: block; }
 
 /* ---------- 吹き出し ---------- */
