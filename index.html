@@ -52,6 +52,7 @@
     </div>
     <div class="action-row">
       <button id="photo-button">📷 写真を撮る</button>
+      <button id="show-button" class="sub-action">見せる</button>
       <button id="camera-button" class="sub-action">カメラ切</button>
       <button id="settings-button" class="sub-action">設定</button>
     </div>
@@ -61,10 +62,13 @@
         <input id="api-key-input" type="password" placeholder="Gemini API key" />
         <button id="save-key-button">保存</button>
       </div>
+      <div class="settings-row" style="margin-top:8px">
+        <button id="export-button" class="sub-action">見せた記憶を書き出す</button>
+      </div>
       <p id="status-line"></p>
     </div>
   </footer>
 
-  <script type="module" src="./main.js?v=20261113-12"></script>
+  <script type="module" src="./main.js?v=20261113-13"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 /**
- * main.js（『ハウリング』N1：殻と登場）
- * 配線：登場（スタート画面→カメラ→挨拶）／会話／タップ配置／撮影モード。
+ * main.js（『ハウリング』N1：殻と登場 ＋ N2：見せる・覚える）
+ * 配線：登場（スタート画面→カメラ→挨拶）／会話／見せる／タップ配置／撮影モード。
  *
  * 設計原則（コンセプト設計 v0.2）:
  * - 数値を見せない：計測パネルは持ち込まない。状態はハウルの振る舞いで伝える
@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { createScene, tryLoadAvatarModel } from './ar-viewer/scene.js?v=20261113-6';
 import { createPlaceholderAvatar, createGlbAvatar } from './ar-viewer/avatar.js';
 import { CameraManager } from './ar-viewer/camera.js';
-import { generateReply, getApiKey, setApiKey } from './ai-agent-engine/gemini-client.js?v=20261113-4';
+import { generateReply, generateVisionReply, getApiKey, setApiKey } from './ai-agent-engine/gemini-client.js?v=20261113-4';
 import { speak } from './ai-agent-engine/speech.js';
 import { MotionController } from './motion-controller/motion-controller.js?v=20261113-9';
 import { loadMemory, buildGreeting, memoryContext } from './memory/greeting.js';
@@ -32,11 +32,13 @@ const cameraVideo = document.getElementById('camera-video');
 const userInput = document.getElementById('user-input');
 const talkButton = document.getElementById('talk-button');
 const photoButton = document.getElementById('photo-button');
+const showButton = document.getElementById('show-button');
 const cameraButton = document.getElementById('camera-button');
 const settingsButton = document.getElementById('settings-button');
 const settingsPanel = document.getElementById('settings-panel');
 const apiKeyInput = document.getElementById('api-key-input');
 const saveKeyButton = document.getElementById('save-key-button');
+const exportButton = document.getElementById('export-button');
 const statusLine = document.getElementById('status-line');
 const photoUi = document.getElementById('photo-ui');
 const photoExit = document.getElementById('photo-exit');
@@ -90,15 +92,57 @@ function applyHeadCorrectionOnce() {
   headBone.updateMatrixWorld(true);
 }
 
-statusLine.textContent = 'build 20261113-12';
+statusLine.textContent = 'build 20261113-13';
 
 // --- 記憶（静的連携） ---
 let memory = { posts: [], episodes: [] };
 let memCtx = '';
 loadMemory().then((m) => {
   memory = m;
-  memCtx = memoryContext(m);
+  refreshMemCtx();
 });
+
+// --- 見せた記憶（ローカルエピソード。N2「覚える」） ---
+// 「見せる」で得た反応を localStorage に残し、会話の文脈へ合流させる。
+// howl-agent の記憶ストアとの同期は N3。ここではローカル完結＋書き出しまで。
+const EPISODES_KEY = 'howling_episodes';
+const MAX_LOCAL_EPISODES = 50;
+
+function loadLocalEpisodes() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(EPISODES_KEY) || '[]');
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveShownEpisode(text, userText) {
+  const episodes = loadLocalEpisodes();
+  episodes.push({
+    id: `ep_${Date.now().toString(36)}${Math.floor(Math.random() * 10000)}`,
+    date: new Date().toISOString(),
+    kind: 'shown',
+    text,
+    userText: userText || '',
+  });
+  try {
+    localStorage.setItem(EPISODES_KEY, JSON.stringify(episodes.slice(-MAX_LOCAL_EPISODES)));
+  } catch { /* 保存できなくても体験は止めない */ }
+}
+
+/** 直近の「見せた記憶」最大3件を、会話の文脈に足すためのテキスト */
+function shownContext() {
+  return loadLocalEpisodes()
+    .slice(-3)
+    .map((e) => `見せてもらった物への反応（${(e.date || '').slice(0, 10)}）: ${e.text}`)
+    .join('\n');
+}
+
+/** 静的メモリ＋見せた記憶を合わせた会話文脈を memCtx に反映する */
+function refreshMemCtx() {
+  memCtx = [memoryContext(memory), shownContext()].filter(Boolean).join('\n');
+}
 
 // --- 吹き出しと小さな通知 ---
 let noteTimer = null;
@@ -416,7 +460,7 @@ let started = false;
 async function ensureMemory() {
   // 記憶の読み込みが終わっていない場合は少し待つ（挨拶に使うため）
   if (!memCtx && memory.posts.length === 0 && memory.episodes.length === 0) {
-    await loadMemory().then((m) => { memory = m; memCtx = memoryContext(m); });
+    await loadMemory().then((m) => { memory = m; refreshMemCtx(); });
   }
 }
 startButton.addEventListener('click', async () => {
@@ -464,6 +508,44 @@ userInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') talk();
 });
 
+// --- 見せる（体験B：カメラ越しに物を見せると反応し、その反応が記憶に残る） ---
+let showBusy = false;
+async function showToHowl() {
+  if (showBusy || talkBusy) return;
+  if (xrActive) {
+    showNote('見せるは通常モードで使ってくれ。');
+    return;
+  }
+  if (!cameraManager.isRunning) {
+    showNote('カメラを入れてから見せてくれ。');
+    return;
+  }
+  const frame = cameraManager.captureFrame();
+  if (!frame) {
+    showNote('まだ映像が届いていない。少し待ってから見せて。');
+    return;
+  }
+  const userText = userInput.value.trim();
+  showBusy = true;
+  showButton.disabled = true;
+  showBubble('……');
+  motion.play('thinking'); // 待っている間も「見ている」ことが伝わるように
+  try {
+    const reply = await generateVisionReply(frame, userText);
+    say(reply.text, reply.emotion);
+    saveShownEpisode(reply.text, userText); // 覚える：反応をエピソードとして保存
+    refreshMemCtx(); // 以後の会話で「前に見せてもらった物」に触れられるようにする
+    if (userText) userInput.value = '';
+  } catch (err) {
+    say('よく見えなかった。もう一度見せてくれ。', 'thinking', { speakIt: false });
+    statusLine.textContent = `エラー: ${err.message}`;
+  } finally {
+    showBusy = false;
+    showButton.disabled = false;
+  }
+}
+showButton.addEventListener('click', showToHowl);
+
 // --- 設定（APIキー） ---
 apiKeyInput.value = getApiKey();
 settingsButton.addEventListener('click', () => {
@@ -472,6 +554,24 @@ settingsButton.addEventListener('click', () => {
 saveKeyButton.addEventListener('click', () => {
   setApiKey(apiKeyInput.value.trim());
   statusLine.textContent = 'キーを保存した。次に話すときから使う。';
+});
+
+// --- 見せた記憶の書き出し（将来 howl-agent のエピソード記憶へ取り込む連携フォーマット） ---
+exportButton.addEventListener('click', () => {
+  const episodes = loadLocalEpisodes();
+  if (!episodes.length) {
+    statusLine.textContent = '見せた記憶はまだない。';
+    return;
+  }
+  const data = episodes.map((e) => ({ date: e.date, kind: 'shown', text: e.text }));
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'howling-episodes.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  statusLine.textContent = `見せた記憶を${data.length}件書き出した。`;
 });
 
 // --- 撮影モード（体験C） ---
