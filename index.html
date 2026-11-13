@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>ハウリング</title>
+  <link rel="stylesheet" href="./css/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <section id="stage">
+    <video id="camera-video" autoplay playsinline muted></video>
+    <div id="canvas-container"></div>
+
+    <div id="bubble" class="hidden">
+      <p id="bubble-text"></p>
+    </div>
+    <p id="stage-note" class="hidden"></p>
+
+    <div id="start-overlay">
+      <h1>ハウリング</h1>
+      <p class="tagline">部屋にオオカミが住んでいる。</p>
+      <button id="start-button">ハウルに会いに行く</button>
+      <p class="start-note">カメラを使うと、あなたの部屋にハウルが現れます。<br />使わなくても会えます。</p>
+    </div>
+
+    <div id="photo-ui" class="hidden">
+      <button id="photo-exit" aria-label="撮影モードを終わる">✕</button>
+      <button id="shutter-button" aria-label="撮影する"></button>
+    </div>
+  </section>
+
+  <div id="photo-preview" class="hidden">
+    <img id="photo-img" alt="ハウルと撮った写真" />
+    <div class="photo-actions">
+      <a id="photo-download" download="howling.png">保存する</a>
+      <button id="photo-close">閉じる</button>
+    </div>
+  </div>
+
+  <footer id="dock">
+    <div class="talk-row">
+      <input id="user-input" type="text" placeholder="ハウルに話しかける" autocomplete="off" />
+      <button id="talk-button">話す</button>
+    </div>
+    <div class="action-row">
+      <button id="photo-button">📷 写真を撮る</button>
+      <button id="camera-button" class="sub-action">カメラ切</button>
+      <button id="settings-button" class="sub-action">設定</button>
+    </div>
+    <div id="settings-panel" class="hidden">
+      <p class="settings-desc">Gemini APIキーを入れると、ハウルが本当に考えて返事をします。未設定でも用意された返事で遊べます。キーはこのブラウザの中にだけ保存されます。</p>
+      <div class="settings-row">
+        <input id="api-key-input" type="password" placeholder="Gemini API key" />
+        <button id="save-key-button">保存</button>
+      </div>
+      <p id="status-line"></p>
+    </div>
+  </footer>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
