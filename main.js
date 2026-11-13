@@ -167,6 +167,7 @@ let xrActive = false;
 let xrSession = null;
 let hitTestSource = null;
 let xrPlaced = false;
+let xrHitSeen = false; // ヒットテストが一度でも床を捉えたか（診断用）
 let floorY = 0; // 現在の床の高さ（通常モードは 0、XR ではヒットテストで決まる）
 let lastStageTapAt = -Infinity;
 
@@ -179,6 +180,7 @@ const reticle = new THREE.Mesh(
 reticle.visible = false;
 scene.add(reticle);
 
+let xrSupportNote = '';
 if (navigator.xr?.isSessionSupported) {
   navigator.xr.isSessionSupported('immersive-ar').then((ok) => {
     xrSupported = !!ok;
@@ -186,8 +188,16 @@ if (navigator.xr?.isSessionSupported) {
       startButton.textContent = 'ARで会いに行く';
       document.querySelector('.start-note').innerHTML =
         'ARを使うと、実際の床の上にハウルが現れます。<br />床を映して、緑の輪が出た場所をタップしてください。';
+    } else {
+      xrSupportNote = 'この端末・ブラウザではAR（WebXR）が使えないため、通常モードで開きます。';
+      document.querySelector('.start-note').innerHTML += `<br />${xrSupportNote}`;
     }
-  }).catch(() => {});
+  }).catch((err) => {
+    xrSupportNote = `AR対応の確認でエラー: ${err.name || err}`;
+    document.querySelector('.start-note').innerHTML += `<br />${xrSupportNote}`;
+  });
+} else {
+  xrSupportNote = 'このブラウザはWebXRに未対応です（Chromeで開くとARが使えます）。';
 }
 
 async function startXR() {
@@ -206,10 +216,16 @@ async function startXR() {
     session.addEventListener('end', onXRSessionEnd);
     xrActive = true;
     document.body.classList.add('xr-on');
+    setTimeout(() => {
+      if (xrActive && !xrHitSeen) {
+        showNote('床が検出できていない。明るい場所で床を映し、ゆっくり動かして。', 7000);
+      }
+    }, 6000);
     return true;
-  } catch {
+  } catch (err) {
     xrSession = null;
     hitTestSource = null;
+    showNote(`ARを開始できなかった（${err.name || 'Error'}: ${err.message || err}）。通常モードで開く。`, 9000);
     return false;
   }
 }
@@ -249,6 +265,7 @@ function onXRSelect(ev) {
 function onXRSessionEnd() {
   xrActive = false;
   xrPlaced = false;
+  xrHitSeen = false;
   xrSession = null;
   if (hitTestSource) {
     hitTestSource.cancel();
@@ -301,6 +318,7 @@ function loop(now, frame) {
   if (xrActive && !xrPlaced && hitTestSource && frame) {
     const refSpace = renderer.xr.getReferenceSpace();
     const hits = frame.getHitTestResults(hitTestSource);
+    if (hits.length) xrHitSeen = true;
     if (hits.length && refSpace) {
       const pose = hits[0].getPose(refSpace);
       if (pose) {
