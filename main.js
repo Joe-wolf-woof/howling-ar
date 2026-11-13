@@ -92,7 +92,7 @@ function applyHeadCorrectionOnce() {
   headBone.updateMatrixWorld(true);
 }
 
-statusLine.textContent = 'build 20261113-13';
+statusLine.textContent = 'build 20261113-14';
 
 // --- 記憶（静的連携） ---
 let memory = { posts: [], episodes: [] };
@@ -257,6 +257,7 @@ async function startXR() {
     xrActive = true;
     anchor.visible = false; // 配置するまでは姿を見せない（原点＝目の高さに浮いて見えるため）
     document.body.classList.add('xr-on');
+    cameraButton.textContent = 'AR終了';
     setTimeout(() => {
       if (xrActive && !xrHitSeen) {
         showNote('床が検出できていない。明るい場所で床を映し、ゆっくり動かして。', 7000);
@@ -324,6 +325,7 @@ function onXRSessionEnd() {
   anchor.scale.setScalar(1);
   hasPlaceTarget = false;
   document.body.classList.remove('xr-on');
+  cameraButton.textContent = cameraManager.isRunning ? 'カメラ切' : 'カメラ入';
   showNote('ARを終了した。通常モードに戻った。');
 }
 
@@ -444,7 +446,18 @@ function stopCamera() {
 
 cameraButton.addEventListener('click', async () => {
   if (xrActive) {
-    showNote('AR中は本物の景色が見えている。そのままで大丈夫だ。');
+    // AR 中はこのボタンが「AR終了」になる（通常モードへ戻る出口）。
+    // セッションを終えると 'end' イベント経由で onXRSessionEnd が後片付けする。
+    const session = xrSession;
+    if (session) {
+      try {
+        await session.end();
+      } catch {
+        if (xrActive) onXRSessionEnd();
+      }
+    } else {
+      onXRSessionEnd();
+    }
     return;
   }
   if (cameraManager.isRunning) {
@@ -513,7 +526,7 @@ let showBusy = false;
 async function showToHowl() {
   if (showBusy || talkBusy) return;
   if (xrActive) {
-    showNote('見せるは通常モードで使ってくれ。');
+    showNote('見せるは通常モードで使ってくれ。戻るには「AR終了」を押して。');
     return;
   }
   if (!cameraManager.isRunning) {
@@ -588,7 +601,7 @@ function exitPhotoMode() {
 }
 photoButton.addEventListener('click', () => {
   if (xrActive) {
-    showNote('写真は通常モードで撮ってくれ。');
+    showNote('写真は通常モードで撮ってくれ。戻るには「AR終了」を押して。');
     return;
   }
   enterPhotoMode();
