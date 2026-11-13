@@ -1,5 +1,5 @@
 /**
- * main.js（『ハウリング』N1：殻と登場 ＋ N2：見せる・覚える）
+ * main.js（『HowLink』N1：殻と登場 ＋ N2：見せる・覚える）
  * 配線：登場（スタート画面→カメラ→挨拶）／会話／見せる／タップ配置／撮影モード。
  *
  * 設計原則（コンセプト設計 v0.2）:
@@ -50,6 +50,13 @@ const photoClose = document.getElementById('photo-close');
 
 const { renderer, scene, camera, ground } = createScene(container);
 
+// 通常モードのカメラの定位置。WebXR セッション中、three.js はこのカメラの
+// position/quaternion を頭の姿勢で上書きし、終了しても元に戻さない。
+// そのため終了時にここへ復元しないと、通常モードで視点が頭の最後の位置に
+// 残り、オオカミが巨大化したり画面の端に張り付いたりする（2026-11-13 実機報告）。
+const CAM_HOME_POS = camera.position.clone();
+const CAM_HOME_QUAT = camera.quaternion.clone();
+
 // 配置用アンカー：タップ配置で動かすのは外側のこのグループ。
 // 感情モーションは内側のアバター本体に掛かるため競合しない（第一作の構成を踏襲）。
 const anchor = new THREE.Group();
@@ -92,7 +99,7 @@ function applyHeadCorrectionOnce() {
   headBone.updateMatrixWorld(true);
 }
 
-statusLine.textContent = 'build 20261113-14';
+statusLine.textContent = 'build 20261113-15';
 
 // --- 記憶（静的連携） ---
 let memory = { posts: [], episodes: [] };
@@ -323,6 +330,11 @@ function onXRSessionEnd() {
   anchor.position.set(0, 0, 0);
   anchor.rotation.y = 0;
   anchor.scale.setScalar(1);
+  // XR が上書きしたカメラの姿勢を通常モードの定位置へ復元する（上の CAM_HOME 参照）。
+  camera.position.copy(CAM_HOME_POS);
+  camera.quaternion.copy(CAM_HOME_QUAT);
+  camera.aspect = container.clientWidth / container.clientHeight;
+  camera.updateProjectionMatrix();
   hasPlaceTarget = false;
   document.body.classList.remove('xr-on');
   cameraButton.textContent = cameraManager.isRunning ? 'カメラ切' : 'カメラ入';

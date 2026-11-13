@@ -1,5 +1,5 @@
 /**
-* ai-agent-engine/gemini-client.js（『ハウリング』版）
+* ai-agent-engine/gemini-client.js（『HowLink』版）
 * 第一作から流用し、プロンプトをハウルのペルソナ v0.4 に差し替えたもの。
 * 返答は { text, emotion} の JSON 契約で統一する。
 * - Gemini API キーがあれば実 API を呼ぶ（モデルフォールバック付き）
