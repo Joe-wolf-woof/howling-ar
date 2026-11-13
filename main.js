@@ -63,7 +63,28 @@ tryLoadAvatarModel().then((gltf) => {
   anchor.remove(placeholder.group);
   anchor.add(glbAvatar.group);
   motion.setAvatar(glbAvatar);
+  headBone = null;
+  glbAvatar.group.traverse((o) => {
+    if (!headBone && o.isBone && o.name.toLowerCase() === 'head') headBone = o;
+  });
 });
+
+// 仮モデル（TRELLIS.2生成）の顔は右下向きに焼き込まれているため、Headボーンへ
+// 一定のヨー補正を毎フレーム合成して正面を向かせる（形状実測＋レンダ検証済み: +32度）。
+// 12月にモデルを差し替えたら、この補正は外すこと。
+const HEAD_YAW_CORRECTION = THREE.MathUtils.degToRad(32);
+let headBone = null;
+const _hq = new THREE.Quaternion();
+const _pq = new THREE.Quaternion();
+const _cq = new THREE.Quaternion();
+const _upAxis = new THREE.Vector3(0, 1, 0);
+function applyHeadCorrection() {
+  if (!headBone || !headBone.parent) return;
+  headBone.getWorldQuaternion(_hq);
+  _cq.setFromAxisAngle(_upAxis, HEAD_YAW_CORRECTION).multiply(_hq);
+  headBone.parent.getWorldQuaternion(_pq);
+  headBone.quaternion.copy(_pq.invert().multiply(_cq));
+}
 
 // --- 記憶（静的連携） ---
 let memory = { posts: [], episodes: [] };
@@ -175,6 +196,7 @@ function loop(now) {
   }
 
   motion.update(now);
+  applyHeadCorrection();
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
