@@ -90,7 +90,7 @@ function applyHeadCorrectionOnce() {
   headBone.updateMatrixWorld(true);
 }
 
-statusLine.textContent = 'build 20261113-10';
+statusLine.textContent = 'build 20261113-11';
 
 // --- 記憶（静的連携） ---
 let memory = { posts: [], episodes: [] };
@@ -235,7 +235,9 @@ function onXRSelect(ev) {
     anchor.position.copy(reticle.position);
     floorY = reticle.position.y;
     ground.position.y = floorY;
-    // サイズは通常モードと同じ（縮小しない。JOE指定で 1.3m 化以前の大きさに戻した）
+    // AR では通常モードの「見え方」に合わせる。通常モードは 3.2m 先から見た姿で、
+    // 実寸 1.5m のままだと近くで巨大に見えるため、体長 約0.83m に縮小する（JOE指定）。
+    anchor.scale.setScalar(0.55);
     xrPlaced = true;
     reticle.visible = false;
     showNote('ハウルが床に立った。床をタップすると、そこへ移動する。');
