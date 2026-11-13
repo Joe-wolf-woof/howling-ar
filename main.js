@@ -67,35 +67,30 @@ tryLoadAvatarModel().then((gltf) => {
   glbAvatar.group.traverse((o) => {
     if (!headBone && o.isBone && o.name.toLowerCase() === 'head') headBone = o;
   });
+  applyHeadCorrectionOnce();
 });
 
-// 仮モデル（TRELLIS.2生成）の顔は右下向きに焼き込まれているため、Headボーンへ
-// 一定のヨー補正を毎フレーム合成して正面を向かせる（形状実測＋レンダ検証済み: +32度）。
+// 仮モデル（TRELLIS.2生成）の顔は右下向きに焼き込まれているため、読み込み時に
+// Headボーンの静止姿勢へ +32度 のヨー補正を一度だけ焼き込む（形状実測＋レンダ検証済み）。
+// 毎フレーム合成は累積・競合の温床になるため行わない。ミキサーはこの姿勢を
+// 「元の姿勢」として保持するので、静止時は常に補正が効いた状態になる。
 // 12月にモデルを差し替えたら、この補正は外すこと。
 const HEAD_YAW_CORRECTION = THREE.MathUtils.degToRad(32);
 let headBone = null;
-let prevAppliedHead = null; // 前フレームに自分が設定したローカル回転（累積防止の判定用）
 const _hq = new THREE.Quaternion();
 const _pq = new THREE.Quaternion();
 const _cq = new THREE.Quaternion();
 const _upAxis = new THREE.Vector3(0, 1, 0);
-function composeHeadYaw(angle) {
+function applyHeadCorrectionOnce() {
+  if (!headBone || !headBone.parent) return;
   headBone.getWorldQuaternion(_hq);
-  _cq.setFromAxisAngle(_upAxis, angle).multiply(_hq);
+  _cq.setFromAxisAngle(_upAxis, HEAD_YAW_CORRECTION).multiply(_hq);
   headBone.parent.getWorldQuaternion(_pq);
   headBone.quaternion.copy(_pq.invert().multiply(_cq));
+  headBone.updateMatrixWorld(true);
 }
-function applyHeadCorrection() {
-  if (!headBone || !headBone.parent) return;
-  // 静止中はアニメーションがボーンを書き換えないため、補正が毎フレーム累積してしまう。
-  // 前フレームに自分が設定した値のままなら、まず前回の補正を取り消してから掛け直す。
-  if (prevAppliedHead && Math.abs(headBone.quaternion.dot(prevAppliedHead)) > 0.9999) {
-    composeHeadYaw(-HEAD_YAW_CORRECTION);
-  }
-  composeHeadYaw(HEAD_YAW_CORRECTION);
-  if (!prevAppliedHead) prevAppliedHead = new THREE.Quaternion();
-  prevAppliedHead.copy(headBone.quaternion);
-}
+
+statusLine.textContent = 'build 20261113-10';
 
 // --- 記憶（静的連携） ---
 let memory = { posts: [], episodes: [] };
@@ -240,7 +235,7 @@ function onXRSelect(ev) {
     anchor.position.copy(reticle.position);
     floorY = reticle.position.y;
     ground.position.y = floorY;
-    anchor.scale.setScalar(0.7); // 実寸で体長 約1.05m（JOE指定：以前の見え方に寄せる）
+    // サイズは通常モードと同じ（縮小しない。JOE指定で 1.3m 化以前の大きさに戻した）
     xrPlaced = true;
     reticle.visible = false;
     showNote('ハウルが床に立った。床をタップすると、そこへ移動する。');
@@ -368,7 +363,6 @@ function loop(now, frame) {
   }
 
   motion.update(now);
-  applyHeadCorrection();
   renderer.render(scene, camera);
 }
 renderer.setAnimationLoop(loop); // XR 提示中も回り続けるよう、rAF ではなくこちらを使う
