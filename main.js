@@ -63,11 +63,15 @@ const anchor = new THREE.Group();
 scene.add(anchor);
 
 const placeholder = createPlaceholderAvatar();
+placeholder.group.visible = false; // 起動直後にロボット（仮モデル）が見えないよう隠す。本モデルが来たら差し替え、失敗した時だけ出す
 anchor.add(placeholder.group);
 const motion = new MotionController(placeholder);
 
 tryLoadAvatarModel().then((gltf) => {
-  if (!gltf) return;
+  if (!gltf) {
+    placeholder.group.visible = true; // 本モデルを読めなかった場合のフォールバック
+    return;
+  }
   const glbAvatar = createGlbAvatar(gltf);
   anchor.remove(placeholder.group);
   anchor.add(glbAvatar.group);
@@ -99,7 +103,7 @@ function applyHeadCorrectionOnce() {
   headBone.updateMatrixWorld(true);
 }
 
-statusLine.textContent = 'build 20261113-15';
+statusLine.textContent = 'build 20261113-16';
 
 // --- 記憶（静的連携） ---
 let memory = { posts: [], episodes: [] };
@@ -339,6 +343,10 @@ function onXRSessionEnd() {
   document.body.classList.remove('xr-on');
   cameraButton.textContent = cameraManager.isRunning ? 'カメラ切' : 'カメラ入';
   showNote('ARを終了した。通常モードに戻った。');
+  // AR を抜けたら通常モードのカメラを自動で再開する。開始直後は AR に入るため
+  // カメラが止まったままで、「見せる」が「カメラを入れて」と弾く食い違いが起きていた。
+  // ラベルは startCamera 側が更新する（失敗したら「カメラ入」のまま）。
+  startCamera();
 }
 
 container.addEventListener('pointerdown', (ev) => {
@@ -542,7 +550,7 @@ async function showToHowl() {
     return;
   }
   if (!cameraManager.isRunning) {
-    showNote('カメラを入れてから見せてくれ。');
+    showNote('カメラが止まっている。「カメラ入」を押してから見せてくれ。');
     return;
   }
   const frame = cameraManager.captureFrame();
