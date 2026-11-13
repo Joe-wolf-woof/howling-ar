@@ -174,16 +174,16 @@ export class MotionController {
       switch (emotion) {
         case 'happy':
           group.position.y = Math.abs(Math.sin(t * Math.PI * 2)) * 0.12;
-          if (parts.head) parts.head.rotation.x = -0.12 * wave; // 少し見上げる
+          if (!this.avatar.mixer && parts.head) parts.head.rotation.x = -0.12 * wave; // 少し見上げる
           break;
         case 'thinking':
           group.rotation.z = 0.05 * wave;
-          if (parts.head) parts.head.rotation.z = 0.28 * wave; // 首をかしげる
+          if (!this.avatar.mixer && parts.head) parts.head.rotation.z = 0.28 * wave; // 首をかしげる
           break;
         case 'pointing':
           group.rotation.y = -0.45 * wave; // そちらを向く
           group.rotation.x = 0.06 * wave;
-          if (parts.head) parts.head.rotation.y = -0.3 * wave;
+          if (!this.avatar.mixer && parts.head) parts.head.rotation.y = -0.3 * wave;
           break;
         case 'idle':
         default:

@@ -18,7 +18,7 @@ import { createPlaceholderAvatar, createGlbAvatar } from './ar-viewer/avatar.js'
 import { CameraManager } from './ar-viewer/camera.js';
 import { generateReply, getApiKey, setApiKey } from './ai-agent-engine/gemini-client.js?v=20261113-4';
 import { speak } from './ai-agent-engine/speech.js';
-import { MotionController } from './motion-controller/motion-controller.js';
+import { MotionController } from './motion-controller/motion-controller.js?v=20261113-9';
 import { loadMemory, buildGreeting, memoryContext } from './memory/greeting.js';
 
 const stage = document.getElementById('stage');
@@ -240,7 +240,7 @@ function onXRSelect(ev) {
     anchor.position.copy(reticle.position);
     floorY = reticle.position.y;
     ground.position.y = floorY;
-    anchor.scale.setScalar(0.85); // 実寸寄り（体長 約1.3m）
+    anchor.scale.setScalar(0.7); // 実寸で体長 約1.05m（JOE指定：以前の見え方に寄せる）
     xrPlaced = true;
     reticle.visible = false;
     showNote('ハウルが床に立った。床をタップすると、そこへ移動する。');
